@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: cluster-create namespaces clone argo-install 
+.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline
@@ -10,16 +10,24 @@ clone:
 cluster-create:clone 
 	kind create cluster --name $(CLUSTER_NAME)
 
-namespaces:
+namespaces: cluster-create
 	kubectl create namespace argo
 	kubectl create namespace argo-events
 	kubectl create namespace argo-workflows
 
-argo-install:		
+argo-install: namespaces		
 	kubectl apply --server-side -f https://github.com/argoproj/argo-workflows/releases/latest/download/quick-start-minimal.yaml
 
-argo-event-install:
+argo-event-install: namespaces 
 	kubectl apply -n argo-events -f https://github.com/argoproj/argo-events/releases/latest/download/install.yaml
 	kubectl apply -n argo-events -f https://raw.githubusercontent.com/argoproj/argo-events/stable/examples/eventbus/native.yaml
 
+apply-rbac: argo-install argo-event-install
+	kubectl apply -f argo-event-pipeline/rbac/clusterrole.yaml
+	kubectl apply -f argo-event-pipeline/rbac/clusterrolebinding.yaml
 
+deploy-manifest: apply-rbac
+	kubectl apply -f argo-event-pipeline/manifest/eventsource-webhook.yaml
+	kubectl apply -f argo-event-pipeline/manifest/eventsource-svc.yaml
+	kubectl apply -f argo-event-pipeline/manifest/ollama-deployment.yaml
+	kubectl apply -f argo-event-pipeline/manifest/sensor-webhook.yaml

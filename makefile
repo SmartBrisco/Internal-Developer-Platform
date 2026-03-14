@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test 
+.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
@@ -14,6 +14,7 @@ namespaces: cluster-create
 	kubectl create namespace argo
 	kubectl create namespace argo-events
 	kubectl create namespace argo-workflows
+	kubectl create namespace monitoring
 
 argo-install: namespaces		
 	kubectl apply --server-side -f https://github.com/argoproj/argo-workflows/releases/latest/download/quick-start-minimal.yaml
@@ -43,3 +44,21 @@ run-test: port-forwarding
 	sleep 5
 	curl -d '{"message":"hello"}' -H "Content-Type: application/json" -X POST http://localhost:12000/push
 	kubectl get workflows -n argo-workflows
+
+deploy-jaeger: namespaces
+	kubectl apply -f platform-observability/k8s/jaeger.yaml
+
+deploy-prometheus: namespaces
+	kubectl apply -f platform-observability/k8s/prometheus-config.yaml
+	kubectl apply -f platform-observability/k8s/prometheus.yaml
+
+deploy-grafana: namespaces
+	kubectl apply -f platform-observability/k8s/grafana.yaml
+
+deploy-otel: deploy-jaeger deploy-prometheus deploy-grafana
+	kubectl apply -f platform-observability/k8s/otel-collector-config.yaml
+	kubectl apply -f platform-observability/k8s/otel-collector.yaml	
+
+verify: 
+	sleep 5 
+	kubectl get pods -n monitoring

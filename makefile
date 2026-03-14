@@ -73,4 +73,4 @@ tf-validate: tf-init
 tf-scan: tf-validate
 	trivy config gitops-infra-pipeline/terraform --severity HIGH,CRITICAL
 
-platform-up: verify run-test
+platform-up: check-prereqs verify run-test pull-tiny-llama-model

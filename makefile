@@ -1,11 +1,11 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest
+.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test 
 
 clone:
-	git clone https://github.com/SmartBrisco/argo-event-pipeline
-	git clone https://github.com/SmartBrisco/gitops-infra-pipeline
-	git clone https://github.com/SmartBrisco/platform-observability
+	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
+	git clone https://github.com/SmartBrisco/gitops-infra-pipeline || true
+	git clone https://github.com/SmartBrisco/platform-observability || true
 
 cluster-create:clone 
 	kind create cluster --name $(CLUSTER_NAME)
@@ -31,3 +31,15 @@ deploy-manifest: apply-rbac
 	kubectl apply -f argo-event-pipeline/manifest/eventsource-svc.yaml
 	kubectl apply -f argo-event-pipeline/manifest/ollama-deployment.yaml
 	kubectl apply -f argo-event-pipeline/manifest/sensor-webhook.yaml
+
+pull-tiny-llama-model: deploy-manifest
+	kubectl exec -n argo-workflows deployment/ollama -- ollama pull tinyllama
+
+port-forwarding: deploy-manifest
+	kubectl port-forward svc/webhook-eventsource-svc 12000:12000 -n argo-events &
+	kubectl port-forward svc/argo-server 2746:2746 -n argo &
+  
+run-test: port-forwarding
+	sleep 5
+	curl -d '{"message":"hello"}' -H "Content-Type: application/json" -X POST http://localhost:12000/push
+	kubectl get workflows -n argo-workflows

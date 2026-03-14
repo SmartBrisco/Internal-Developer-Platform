@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: cluster-create clone 
+.PHONY: cluster-create namespaces clone 
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline
@@ -10,3 +10,7 @@ clone:
 cluster-create:clone 
 	kind create cluster --name $(CLUSTER_NAME)
 
+namespaces:
+	kubectl create namespace argo
+	kubectl create namespace argo-events
+	kubectl create namespace argo-workflows

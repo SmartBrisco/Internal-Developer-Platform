@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify
+.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-validate tf-scan platform-up
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
@@ -59,6 +59,18 @@ deploy-otel: deploy-jaeger deploy-prometheus deploy-grafana
 	kubectl apply -f platform-observability/k8s/otel-collector-config.yaml
 	kubectl apply -f platform-observability/k8s/otel-collector.yaml	
 
-verify: 
+verify: deploy-otel
 	sleep 5 
 	kubectl get pods -n monitoring
+
+tf-init: clone
+	cd gitops-infra-pipeline/terraform && terraform init
+
+tf-validate: tf-init
+	cd gitops-infra-pipeline/terraform && terraform fmt -check -recursive
+	cd gitops-infra-pipeline/terraform && terraform validate
+
+tf-scan: tf-validate
+	trivy config gitops-infra-pipeline/terraform --severity HIGH,CRITICAL
+
+

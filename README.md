@@ -8,9 +8,9 @@ One command to spin up a full internal developer platform. An event-driven CI/CD
 
 This repo connects three projects into a single platform:
 
-- **[argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline)** — Event-driven CI/CD pipeline on Kubernetes using Argo Events and Argo Workflows, with Trivy security scanning and AI-powered failure analysis via Ollama
-- **[platform-observability](https://github.com/SmartBrisco/platform-observability)** — Full-stack observability with OpenTelemetry, Jaeger, Prometheus, and Grafana receiving live telemetry from the Argo pipeline
-- **[gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline)** — GitHub Actions and Terraform pipeline provisioning AWS infrastructure on every commit with OIDC authentication and multi-channel Slack notifications
+- **[argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline)** - Event-driven CI/CD pipeline on Kubernetes using Argo Events and Argo Workflows, with Trivy security scanning and AI-powered failure analysis via Ollama
+- **[platform-observability](https://github.com/SmartBrisco/platform-observability)** - Full-stack observability with OpenTelemetry, Jaeger, Prometheus, and Grafana receiving live telemetry from the Argo pipeline
+- **[gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline)** - Multi-cloud GitHub Actions and Terraform pipeline with OPA policy gates across AWS, GCP, and Azure. OIDC authentication, parallel cloud deployment jobs, and multi-channel Slack notifications.
 
 `make platform-up` handles the Kubernetes platform entirely locally. The GitOps infrastructure pipeline runs automatically via GitHub Actions on push to main in that repo.
 
@@ -27,6 +27,7 @@ Install these before running anything:
 | [argo CLI](https://argo-workflows.readthedocs.io/en/latest/walk-through/argo-cli/) | Argo Workflows CLI |
 | [terraform](https://developer.hashicorp.com/terraform/install) | Infrastructure as code |
 | [trivy](https://aquasecurity.github.io/trivy/latest/getting-started/installation/) | Security scanning |
+| [conftest](https://www.conftest.dev/) | OPA policy testing |
 
 Run `make check-prereqs` to verify all tools are installed before proceeding.
 
@@ -110,12 +111,13 @@ After `make platform-up` completes:
 For local validation of the GitOps infrastructure pipeline before pushing:
 
 ```bash
-make tf-init       # Initialize Terraform
-make tf-validate   # Format check, validate, tflint
-make tf-scan       # Trivy IaC scan
+make tf-init       # Initialize Terraform across all three clouds
+make tf-validate   # Format check and validate per cloud
+make tf-scan       # Trivy IaC scan per cloud
+make tf-policy     # OPA policy tests against AWS and GCP plan output
 ```
 
-Requires AWS credentials configured locally. The actual `terraform apply` runs automatically via GitHub Actions on push to main in `gitops-infra-pipeline`.
+Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-validate`, and `tf-scan` run without credentials. The actual `terraform apply` runs automatically via GitHub Actions on push to main in `gitops-infra-pipeline`.
 
 ---
 
@@ -139,15 +141,16 @@ Requires AWS credentials configured locally. The actual `terraform apply` runs a
 | `make deploy-grafana` | Deploy Grafana |
 | `make deploy-otel` | Deploy OTel Collector |
 | `make verify` | Verify all monitoring pods are running |
-| `make tf-init` | Initialize Terraform |
-| `make tf-validate` | Run fmt, validate, and tflint |
-| `make tf-scan` | Run Trivy IaC scan |
+| `make tf-init` | Initialize Terraform across all three clouds |
+| `make tf-validate` | Run fmt and validate across all three clouds |
+| `make tf-scan` | Run Trivy IaC scan across all three clouds |
+| `make tf-policy` | Run OPA policy tests against AWS and GCP plan output |
 | `make platform-up` | Spin up the full platform |
 
 ---
 
 ## Part of a Three-Project Platform Engineering Portfolio
 
-- **Project 1** — [argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline) — Event-driven CI/CD with AI-powered failure analysis
-- **Project 2** — [gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline) — GitHub Actions and Terraform infrastructure automation
-- **Project 3** — [platform-observability](https://github.com/SmartBrisco/platform-observability) — Unified observability with OpenTelemetry, Jaeger, Prometheus, and Grafana
+- **Project 1** - [argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline) - Event-driven CI/CD with AI-powered failure analysis
+- **Project 2** - [gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline) - Multi-cloud GitHub Actions and Terraform infrastructure automation with OPA policy gates across AWS, GCP, and Azure
+- **Project 3** - [platform-observability](https://github.com/SmartBrisco/platform-observability) - Unified observability with OpenTelemetry, Jaeger, Prometheus, and Grafana

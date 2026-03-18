@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-validate tf-scan platform-up
+.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-policy tf-validate tf-scan platform-up
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
@@ -64,13 +64,24 @@ verify: deploy-otel
 	kubectl get pods -n monitoring
 
 tf-init: clone
-	cd gitops-infra-pipeline/terraform && terraform init
+	cd gitops-infra-pipeline/terraform/aws && terraform init
+	cd gitops-infra-pipeline/terraform/gcp && terraform init
+	cd gitops-infra-pipeline/terraform/azure && terraform init
+
+tf-policy: tf-init
+	cd gitops-infra-pipeline/terraform/aws && terraform plan -out=tfplan.binary && terraform show -json tfplan.binary > tfplan.json
+	conftest test gitops-infra-pipeline/terraform/aws/tfplan.json --policy gitops-infra-pipeline/policy --namespace terraform.policies
+	cd gitops-infra-pipeline/terraform/gcp && terraform plan -out=tfplan.binary && terraform show -json tfplan.binary > tfplan.json
+	conftest test gitops-infra-pipeline/terraform/gcp/tfplan.json --policy gitops-infra-pipeline/policy --namespace terraform.policies
 
 tf-validate: tf-init
-	cd gitops-infra-pipeline/terraform && terraform fmt -check -recursive
-	cd gitops-infra-pipeline/terraform && terraform validate
+	cd gitops-infra-pipeline/terraform/aws && terraform fmt -check -recursive && terraform validate
+	cd gitops-infra-pipeline/terraform/gcp && terraform fmt -check -recursive && terraform validate
+	cd gitops-infra-pipeline/terraform/azure && terraform fmt -check -recursive && terraform validate
 
 tf-scan: tf-validate
-	trivy config gitops-infra-pipeline/terraform --severity HIGH,CRITICAL
+	trivy config gitops-infra-pipeline/terraform/aws --severity HIGH,CRITICAL
+	trivy config gitops-infra-pipeline/terraform/gcp --severity HIGH,CRITICAL
+	trivy config gitops-infra-pipeline/terraform/azure --severity HIGH,CRITICAL
 
 platform-up: check-prereqs verify run-test pull-tiny-llama-model

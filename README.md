@@ -27,7 +27,7 @@ Install these before running anything:
 | [argo CLI](https://argo-workflows.readthedocs.io/en/latest/walk-through/argo-cli/) | Argo Workflows CLI |
 | [terraform](https://developer.hashicorp.com/terraform/install) | Infrastructure as code |
 | [trivy](https://aquasecurity.github.io/trivy/latest/getting-started/installation/) | Security scanning |
-| [conftest](https://www.conftest.dev/) | OPA policy testing |
+| [conftest](https://www.conftest.dev/install/) | OPA policy testing |
 
 Run `make check-prereqs` to verify all tools are installed before proceeding.
 

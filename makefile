@@ -1,11 +1,22 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-policy tf-validate tf-scan platform-up
+.PHONY:  check-prereqs cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-policy tf-validate tf-scan platform-up
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
 	git clone https://github.com/SmartBrisco/gitops-infra-pipeline || true
 	git clone https://github.com/SmartBrisco/platform-observability || true
+
+check-prereqs:
+	@echo "Checking required tools..."
+	@command -v kubectl >/dev/null 2>&1 || { echo "kubectl not found. Install: https://kubernetes.io/docs/tasks/tools/"; exit 1; }
+	@command -v kind >/dev/null 2>&1 || { echo "kind not found. Install: https://kind.sigs.k8s.io/docs/user/quick-start/"; exit 1; }
+	@command -v argo >/dev/null 2>&1 || { echo "argo CLI not found. Install: https://argo-workflows.readthedocs.io/en/latest/walk-through/argo-cli/"; exit 1; }
+	@command -v terraform >/dev/null 2>&1 || { echo "terraform not found. Install: https://developer.hashicorp.com/terraform/install"; exit 1; }
+	@command -v trivy >/dev/null 2>&1 || { echo "trivy not found. Install: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"; exit 1; }
+	@command -v conftest >/dev/null 2>&1 || { echo "conftest not found. Install: https://www.conftest.dev/install/"; exit 1; }
+	@echo "All prerequisites satisfied."
+
 
 cluster-create:clone 
 	kind create cluster --name $(CLUSTER_NAME)

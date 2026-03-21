@@ -1,16 +1,17 @@
 # Platform
 
-One command to spin up a full internal developer platform. An event-driven CI/CD, observability stack, and GitOps infrastructure pipeline running locally in 10 minutes or less.
+One command to spin up a full internal developer platform. An event-driven CI/CD, observability stack, GitOps infrastructure pipeline, and Kubernetes operator running locally in 10 minutes or less.
 
 ---
 
 ## What Gets Built
 
-This repo connects three projects into a single platform:
+This repo connects four projects into a single platform:
 
 - **[argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline)** - Event-driven CI/CD pipeline on Kubernetes using Argo Events and Argo Workflows, with Trivy security scanning and AI-powered failure analysis via Ollama
 - **[platform-observability](https://github.com/SmartBrisco/platform-observability)** - Full-stack observability with OpenTelemetry, Jaeger, Prometheus, and Grafana receiving live telemetry from the Argo pipeline
 - **[gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline)** - Multi-cloud GitHub Actions and Terraform pipeline with OPA policy gates across AWS, GCP, and Azure. OIDC authentication, parallel cloud deployment jobs, and multi-channel Slack notifications.
+- **[namespace-provisioner](https://github.com/SmartBrisco/namespace-provisioner)** - Kubernetes operator for policy-enforced namespace provisioning with RBAC and resource quotas
 
 `make platform-up` handles the Kubernetes platform entirely locally. The GitOps infrastructure pipeline runs automatically via GitHub Actions on push to main in that repo.
 
@@ -25,9 +26,10 @@ Install these before running anything:
 | [kubectl](https://kubernetes.io/docs/tasks/tools/) | Kubernetes CLI |
 | [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) | Local Kubernetes cluster |
 | [argo CLI](https://argo-workflows.readthedocs.io/en/latest/walk-through/argo-cli/) | Argo Workflows CLI |
+| [go](https://go.dev/doc/install) | Required to build and install the operator |
 | [terraform](https://developer.hashicorp.com/terraform/install) | Infrastructure as code |
 | [trivy](https://aquasecurity.github.io/trivy/latest/getting-started/installation/) | Security scanning |
-| [conftest](https://www.conftest.dev/install/) | OPA policy testing |
+| [conftest](https://www.conftest.dev/) | OPA policy testing |
 
 Run `make check-prereqs` to verify all tools are installed before proceeding.
 
@@ -40,7 +42,6 @@ These steps are required once before the Terraform validation targets will work.
 ### 1. AWS OIDC Configuration
 
 Create an IAM OIDC Identity Provider in your AWS account:
-
 ```
 Provider URL: https://token.actions.githubusercontent.com
 Audience: sts.amazonaws.com
@@ -74,7 +75,6 @@ Add to your fork of `gitops-infra-pipeline` under Settings → Secrets and varia
 ## Usage
 
 ### Spin up the full platform
-
 ```bash
 git clone <this-repo>
 cd platform
@@ -83,16 +83,17 @@ make platform-up
 
 That's it. The Makefile handles the rest:
 
-1. Clones all three project repos
+1. Clones all four project repos
 2. Creates a local kind cluster
 3. Creates all required namespaces
-4. Installs Argo Workflows and Argo Events
-5. Applies RBAC
-6. Deploys all manifests
-7. Pulls the TinyLlama model into the cluster
-8. Deploys the full observability stack
-9. Port-forwards the webhook and Argo UI
-10. Fires a test webhook and confirms the pipeline runs
+4. Installs the ManagedNamespace CRD
+5. Installs Argo Workflows and Argo Events
+6. Applies RBAC
+7. Deploys all manifests
+8. Pulls the TinyLlama model into the cluster
+9. Deploys the full observability stack
+10. Port-forwards the webhook and Argo UI
+11. Fires a test webhook and confirms the pipeline runs
 
 ### Access the UIs
 
@@ -109,7 +110,6 @@ After `make platform-up` completes:
 ### Terraform validation (optional)
 
 For local validation of the GitOps infrastructure pipeline before pushing:
-
 ```bash
 make tf-init       # Initialize Terraform across all three clouds
 make tf-validate   # Format check and validate per cloud
@@ -126,9 +126,12 @@ Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-vali
 | Target | Description |
 |--------|-------------|
 | `make check-prereqs` | Verify required tools are installed |
-| `make clone` | Clone all three project repos |
+| `make clone` | Clone all four project repos |
 | `make cluster-create` | Create the kind cluster |
 | `make namespaces` | Create all required namespaces |
+| `make operator-install` | Install the ManagedNamespace CRD to the cluster |
+| `make operator-run` | Run the operator locally (blocking) |
+| `make operator-deploy-sample` | Apply a sample ManagedNamespace manifest |
 | `make argo-install` | Install Argo Workflows |
 | `make argo-event-install` | Install Argo Events and EventBus |
 | `make apply-rbac` | Apply RBAC manifests |
@@ -149,8 +152,9 @@ Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-vali
 
 ---
 
-## Part of a Three-Project Platform Engineering Portfolio
+## Part of a Platform Engineering Portfolio
 
 - **Project 1** - [argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline) - Event-driven CI/CD with AI-powered failure analysis
 - **Project 2** - [gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline) - Multi-cloud GitHub Actions and Terraform infrastructure automation with OPA policy gates across AWS, GCP, and Azure
 - **Project 3** - [platform-observability](https://github.com/SmartBrisco/platform-observability) - Unified observability with OpenTelemetry, Jaeger, Prometheus, and Grafana
+- **Project 4** - [namespace-provisioner](https://github.com/SmartBrisco/namespace-provisioner) - Kubernetes operator in Go for policy-enforced namespace provisioning

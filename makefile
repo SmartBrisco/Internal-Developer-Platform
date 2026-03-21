@@ -1,11 +1,12 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY:  check-prereqs cluster-create namespaces clone argo-install argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-policy tf-validate tf-scan platform-up
+.PHONY:  check-prereqs cluster-create namespaces clone operator-install operator-deploy-sample argo-install operator-run argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-policy tf-validate tf-scan platform-up
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
 	git clone https://github.com/SmartBrisco/gitops-infra-pipeline || true
 	git clone https://github.com/SmartBrisco/platform-observability || true
+	git clone https://github.com/SmartBrisco/namespace-provisioner || true
 
 check-prereqs:
 	@echo "Checking required tools..."
@@ -26,6 +27,15 @@ namespaces: cluster-create
 	kubectl create namespace argo-events
 	kubectl create namespace argo-workflows
 	kubectl create namespace monitoring
+
+operator-install: namespaces 
+	cd namespace-provisioner && make install
+
+operator-run:
+	cd namespace-provisioner && make run
+
+operator-deploy-sample:
+	kubectl apply -f namespace-provisioner/config/samples/platform_v1alpha1_managednamespace.yaml	
 
 argo-install: namespaces		
 	kubectl apply --server-side -f https://github.com/argoproj/argo-workflows/releases/latest/download/quick-start-minimal.yaml
@@ -95,4 +105,4 @@ tf-scan: tf-validate
 	trivy config gitops-infra-pipeline/terraform/gcp --severity HIGH,CRITICAL
 	trivy config gitops-infra-pipeline/terraform/azure --severity HIGH,CRITICAL
 
-platform-up: check-prereqs verify run-test pull-tiny-llama-model
+platform-up: check-prereqs operator-install verify run-test pull-tiny-llama-model

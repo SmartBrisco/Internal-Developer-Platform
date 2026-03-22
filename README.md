@@ -30,6 +30,8 @@ Install these before running anything:
 | [terraform](https://developer.hashicorp.com/terraform/install) | Infrastructure as code |
 | [trivy](https://aquasecurity.github.io/trivy/latest/getting-started/installation/) | Security scanning |
 | [conftest](https://www.conftest.dev/) | OPA policy testing |
+| [helm](https://helm.sh/docs/intro/install/) | Required to install Kargo |
+| [kargo CLI](https://github.com/akuity/kargo/releases/latest) | Kargo promotion CLI |
 
 Run `make check-prereqs` to verify all tools are installed before proceeding.
 
@@ -47,7 +49,7 @@ Provider URL: https://token.actions.githubusercontent.com
 Audience: sts.amazonaws.com
 ```
 
-Create an IAM Role with a trust policy scoped to your fork of `gitops-infra-pipeline`. Attach policies: `AmazonEC2FullAccess`, `AmazonVPCFullAccess`, `SecretsManagerReadWrite`.
+Create four scoped inline policies: eks_access, ec2_vpc, SecretsManager, tfbacknstate. No AWS managed FullAccess policies are used.
 
 > This works with any cloud provider that supports OIDC federation with GitHub Actions. Replace the AWS-specific Terraform module with your provider of choice and the rest of the platform stays the same.
 
@@ -144,10 +146,16 @@ Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-vali
 | `make deploy-grafana` | Deploy Grafana |
 | `make deploy-otel` | Deploy OTel Collector |
 | `make verify` | Verify all monitoring pods are running |
+| `make tf-bootstrap` | Create S3 state bucket and DynamoDB lock table |
 | `make tf-init` | Initialize Terraform across all three clouds |
 | `make tf-validate` | Run fmt and validate across all three clouds |
 | `make tf-scan` | Run Trivy IaC scan across all three clouds |
 | `make tf-policy` | Run OPA policy tests against AWS and GCP plan output |
+| `make kargo-install` | Install cert-manager and Kargo on the cluster |
+| `make kargo-login` | Port-forward and login to Kargo |
+| `make kargo-setup` | Apply Kargo project, warehouse, and stages |
+| `make kargo-promote-dev` | Promote freight to dev (FREIGHT=<hash>) |
+| `make kargo-promote-prod` | Promote freight to prod (FREIGHT=<hash>) |
 | `make platform-up` | Spin up the full platform |
 
 ---
@@ -155,6 +163,6 @@ Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-vali
 ## Part of a Platform Engineering Portfolio
 
 - **Project 1** - [argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline) - Event-driven CI/CD with AI-powered failure analysis
-- **Project 2** - [gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline) - Multi-cloud GitHub Actions and Terraform infrastructure automation with OPA policy gates across AWS, GCP, and Azure
+- **Project 2** - [gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline) - Multi-cloud Terraform with Kargo progressive delivery, security gates, and manual approval across AWS, GCP, and Azure
 - **Project 3** - [platform-observability](https://github.com/SmartBrisco/platform-observability) - Unified observability with OpenTelemetry, Jaeger, Prometheus, and Grafana
 - **Project 4** - [namespace-provisioner](https://github.com/SmartBrisco/namespace-provisioner) - Kubernetes operator in Go for policy-enforced namespace provisioning

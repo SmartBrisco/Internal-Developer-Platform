@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY:  check-prereqs cluster-create namespaces clone operator-install operator-deploy-sample argo-install operator-run argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-init tf-policy tf-validate tf-scan platform-up
+.PHONY: check-prereqs cluster-create namespaces clone operator-install operator-deploy-sample argo-install operator-run argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-bootstrap tf-init tf-policy tf-validate tf-scan kargo-install kargo-login kargo-promote-dev kargo-promote-prod platform-up
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
@@ -13,13 +13,15 @@ check-prereqs:
 	@command -v kubectl >/dev/null 2>&1 || { echo "kubectl not found. Install: https://kubernetes.io/docs/tasks/tools/"; exit 1; }
 	@command -v kind >/dev/null 2>&1 || { echo "kind not found. Install: https://kind.sigs.k8s.io/docs/user/quick-start/"; exit 1; }
 	@command -v argo >/dev/null 2>&1 || { echo "argo CLI not found. Install: https://argo-workflows.readthedocs.io/en/latest/walk-through/argo-cli/"; exit 1; }
+	@command -v go >/dev/null 2>&1 || { echo "go not found. Install: https://go.dev/doc/install"; exit 1; }
 	@command -v terraform >/dev/null 2>&1 || { echo "terraform not found. Install: https://developer.hashicorp.com/terraform/install"; exit 1; }
 	@command -v trivy >/dev/null 2>&1 || { echo "trivy not found. Install: https://aquasecurity.github.io/trivy/latest/getting-started/installation/"; exit 1; }
 	@command -v conftest >/dev/null 2>&1 || { echo "conftest not found. Install: https://www.conftest.dev/install/"; exit 1; }
+	@command -v helm >/dev/null 2>&1 || { echo "helm not found. Install: https://helm.sh/docs/intro/install/"; exit 1; }
+	@command -v kargo >/dev/null 2>&1 || { echo "kargo CLI not found. Install: https://github.com/akuity/kargo/releases/latest"; exit 1; }
 	@echo "All prerequisites satisfied."
 
-
-cluster-create:clone 
+cluster-create: clone
 	kind create cluster --name $(CLUSTER_NAME)
 
 namespaces: cluster-create
@@ -28,19 +30,19 @@ namespaces: cluster-create
 	kubectl create namespace argo-workflows
 	kubectl create namespace monitoring
 
-operator-install: namespaces 
+operator-install: namespaces
 	cd namespace-provisioner && make install
 
 operator-run:
 	cd namespace-provisioner && make run
 
 operator-deploy-sample:
-	kubectl apply -f namespace-provisioner/config/samples/platform_v1alpha1_managednamespace.yaml	
+	kubectl apply -f namespace-provisioner/config/samples/platform_v1alpha1_managednamespace.yaml
 
-argo-install: namespaces		
+argo-install: namespaces
 	kubectl apply --server-side -f https://github.com/argoproj/argo-workflows/releases/latest/download/quick-start-minimal.yaml
 
-argo-event-install: namespaces 
+argo-event-install: namespaces
 	kubectl apply -n argo-events -f https://github.com/argoproj/argo-events/releases/latest/download/install.yaml
 	kubectl apply -n argo-events -f https://raw.githubusercontent.com/argoproj/argo-events/stable/examples/eventbus/native.yaml
 
@@ -60,7 +62,7 @@ pull-tiny-llama-model: deploy-manifest
 port-forwarding: deploy-manifest
 	kubectl port-forward svc/webhook-eventsource-svc 12000:12000 -n argo-events &
 	kubectl port-forward svc/argo-server 2746:2746 -n argo &
-  
+
 run-test: port-forwarding
 	sleep 5
 	curl -d '{"message":"hello"}' -H "Content-Type: application/json" -X POST http://localhost:12000/push
@@ -78,30 +80,71 @@ deploy-grafana: namespaces
 
 deploy-otel: deploy-jaeger deploy-prometheus deploy-grafana
 	kubectl apply -f platform-observability/k8s/otel-collector-config.yaml
-	kubectl apply -f platform-observability/k8s/otel-collector.yaml	
+	kubectl apply -f platform-observability/k8s/otel-collector.yaml
 
 verify: deploy-otel
-	sleep 5 
+	sleep 5
 	kubectl get pods -n monitoring
 
+# -----------------------------------------
+# KARGO
+# -----------------------------------------
+kargo-install: namespaces
+	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+	@echo "Waiting for cert-manager..."
+	kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=120s
+	@echo "Install Kargo with: helm install kargo oci://ghcr.io/akuity/kargo-charts/kargo --namespace kargo --create-namespace --set api.adminAccount.passwordHash=<hash> --set api.adminAccount.tokenSigningKey=changeme --set controller.argocd.integrationEnabled=false"
+
+kargo-login:
+	kubectl port-forward --namespace kargo svc/kargo-api 3100:443 &
+	kargo login https://localhost:3100 --admin --insecure-skip-tls-verify
+
+kargo-setup: kargo-login
+	kubectl apply -f gitops-infra-pipeline/kargo/project.yaml
+	kubectl apply -f gitops-infra-pipeline/kargo/warehouse.yaml
+	kubectl apply -f gitops-infra-pipeline/kargo/stages.yaml
+
+kargo-promote-dev:
+	@echo "Usage: make kargo-promote-dev FREIGHT=<hash>"
+	kargo promote --project gitops-infra --freight $(FREIGHT) --stage dev
+
+kargo-promote-prod:
+	@echo "Usage: make kargo-promote-prod FREIGHT=<hash>"
+	kargo promote --project gitops-infra --freight $(FREIGHT) --stage prod
+
+# -----------------------------------------
+# TERRAFORM
+# -----------------------------------------
+tf-bootstrap:
+	aws s3api create-bucket --bucket YOUR-TFSTATE-BUCKET-NAME --region us-east-1
+	aws s3api put-bucket-versioning --bucket YOUR-TFSTATE-BUCKET-NAME \
+		--versioning-configuration Status=Enabled
+	aws dynamodb create-table --table-name YOUR-TFLOCK-TABLE-NAME \
+		--attribute-definitions AttributeName=LockID,AttributeType=S \
+		--key-schema AttributeName=LockID,KeyType=HASH \
+		--billing-mode PAY_PER_REQUEST
+
 tf-init: clone
-	cd gitops-infra-pipeline/terraform/aws && terraform init
+	cd gitops-infra-pipeline/terraform/aws/dev && terraform init -backend=false
+	cd gitops-infra-pipeline/terraform/aws/prod && terraform init -backend=false
 	cd gitops-infra-pipeline/terraform/gcp && terraform init
 	cd gitops-infra-pipeline/terraform/azure && terraform init
 
 tf-policy: tf-init
-	cd gitops-infra-pipeline/terraform/aws && terraform plan -out=tfplan.binary && terraform show -json tfplan.binary > tfplan.json
-	conftest test gitops-infra-pipeline/terraform/aws/tfplan.json --policy gitops-infra-pipeline/policy --namespace terraform.policies
+	cd gitops-infra-pipeline/terraform/aws/dev && terraform plan -out=tfplan.binary && terraform show -json tfplan.binary > tfplan.json
+	conftest test gitops-infra-pipeline/terraform/aws/dev/tfplan.json --policy gitops-infra-pipeline/policy --namespace terraform.policies
 	cd gitops-infra-pipeline/terraform/gcp && terraform plan -out=tfplan.binary && terraform show -json tfplan.binary > tfplan.json
 	conftest test gitops-infra-pipeline/terraform/gcp/tfplan.json --policy gitops-infra-pipeline/policy --namespace terraform.policies
 
 tf-validate: tf-init
-	cd gitops-infra-pipeline/terraform/aws && terraform fmt -check -recursive && terraform validate
+	cd gitops-infra-pipeline/terraform/aws/dev && terraform fmt -check -recursive && terraform validate
+	cd gitops-infra-pipeline/terraform/aws/prod && terraform fmt -check -recursive && terraform validate
 	cd gitops-infra-pipeline/terraform/gcp && terraform fmt -check -recursive && terraform validate
 	cd gitops-infra-pipeline/terraform/azure && terraform fmt -check -recursive && terraform validate
 
 tf-scan: tf-validate
-	trivy config gitops-infra-pipeline/terraform/aws --severity HIGH,CRITICAL
+	trivy config gitops-infra-pipeline/terraform/aws/dev --severity HIGH,CRITICAL
+	trivy config gitops-infra-pipeline/terraform/aws/prod --severity HIGH,CRITICAL
 	trivy config gitops-infra-pipeline/terraform/gcp --severity HIGH,CRITICAL
 	trivy config gitops-infra-pipeline/terraform/azure --severity HIGH,CRITICAL
 

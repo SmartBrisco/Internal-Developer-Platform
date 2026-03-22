@@ -63,7 +63,7 @@ pull-tiny-llama-model: deploy-manifest
 port-forwarding: deploy-manifest
 	pkill -f "port-forward.*webhook-eventsource" || true
 	pkill -f "port-forward svc/argo-server" || true
-	sleep 2
+	sleep 10
 	kubectl wait --for=condition=ready pod -l eventsource-name=webhook -n argo-events --timeout=180s
 	kubectl wait --for=condition=ready pod -l app=argo-server -n argo --timeout=180s
 	kubectl port-forward -n argo-events $$(kubectl get pod -n argo-events -l eventsource-name=webhook -o jsonpath='{.items[0].metadata.name}') 12000:12000 &

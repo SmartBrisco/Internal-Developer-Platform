@@ -45,6 +45,11 @@ argo-install: namespaces
 argo-event-install: namespaces
 	kubectl apply -n argo-events -f https://github.com/argoproj/argo-events/releases/latest/download/install.yaml
 	kubectl apply -n argo-events -f https://raw.githubusercontent.com/argoproj/argo-events/stable/examples/eventbus/native.yaml
+	@echo "Waiting for argo-events controller..."
+	kubectl wait --for=condition=ready pod -l app=controller-manager -n argo-events --timeout=120s
+	@echo "Waiting for eventbus to be provisioned..."
+	sleep 15
+	kubectl wait --for=condition=ready pod -l eventbus-name=default -n argo-events --timeout=180s
 
 apply-rbac: argo-install argo-event-install
 	kubectl apply --force -f argo-event-pipeline/rbac/clusterrole.yaml
@@ -55,6 +60,10 @@ deploy-manifest: apply-rbac
 	kubectl apply -f argo-event-pipeline/manifest/eventsource-svc.yaml
 	kubectl apply -f argo-event-pipeline/manifest/ollama-deployment.yaml
 	kubectl apply -f argo-event-pipeline/manifest/sensor-webhook.yaml
+	@echo "Waiting for eventbus..."
+	kubectl wait --for=condition=ready pod -l eventbus-name=default -n argo-events --timeout=180s
+	@echo "Waiting for webhook eventsource pod..."
+	kubectl wait --for=condition=ready pod -l eventsource-name=webhook -n argo-events --timeout=180s
 
 pull-tiny-llama-model: deploy-manifest
 	kubectl wait --for=condition=ready pod -l app=ollama -n argo-workflows --timeout=120s
@@ -63,8 +72,6 @@ pull-tiny-llama-model: deploy-manifest
 port-forwarding: deploy-manifest
 	pkill -f "port-forward.*webhook-eventsource" || true
 	pkill -f "port-forward svc/argo-server" || true
-	sleep 10
-	kubectl wait --for=condition=ready pod -l eventsource-name=webhook -n argo-events --timeout=180s
 	kubectl wait --for=condition=ready pod -l app=argo-server -n argo --timeout=180s
 	kubectl port-forward -n argo-events $$(kubectl get pod -n argo-events -l eventsource-name=webhook -o jsonpath='{.items[0].metadata.name}') 12000:12000 &
 	kubectl port-forward svc/argo-server 2746:2746 -n argo &

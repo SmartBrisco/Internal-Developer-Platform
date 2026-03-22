@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: check-prereqs cluster-create namespaces clone operator-install operator-deploy-sample argo-install operator-run argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-bootstrap tf-init tf-policy tf-validate tf-scan kargo-install kargo-login kargo-promote-dev kargo-promote-prod platform-up
+.PHONY: check-prereqs cluster-create namespaces clone operator-install operator-deploy-sample argo-install operator-run argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-bootstrap tf-init tf-policy tf-validate tf-scan kargo-install kargo-login kargo-setup kargo-promote-dev kargo-promote-prod platform-up
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
@@ -22,13 +22,13 @@ check-prereqs:
 	@echo "All prerequisites satisfied."
 
 cluster-create: clone
-	kind create cluster --name $(CLUSTER_NAME)
+	kind get clusters | grep -q $(CLUSTER_NAME) || kind create cluster --name $(CLUSTER_NAME)
 
 namespaces: cluster-create
-	kubectl create namespace argo
-	kubectl create namespace argo-events
-	kubectl create namespace argo-workflows
-	kubectl create namespace monitoring
+	kubectl create namespace argo --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create namespace argo-events --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create namespace argo-workflows --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
 operator-install: namespaces
 	cd namespace-provisioner && make install
@@ -47,8 +47,8 @@ argo-event-install: namespaces
 	kubectl apply -n argo-events -f https://raw.githubusercontent.com/argoproj/argo-events/stable/examples/eventbus/native.yaml
 
 apply-rbac: argo-install argo-event-install
-	kubectl apply -f argo-event-pipeline/rbac/clusterrole.yaml
-	kubectl apply -f argo-event-pipeline/rbac/clusterrolebinding.yaml
+	kubectl apply --force -f argo-event-pipeline/rbac/clusterrole.yaml
+	kubectl apply --force -f argo-event-pipeline/rbac/clusterrolebinding.yaml
 
 deploy-manifest: apply-rbac
 	kubectl apply -f argo-event-pipeline/manifest/eventsource-webhook.yaml
@@ -57,11 +57,18 @@ deploy-manifest: apply-rbac
 	kubectl apply -f argo-event-pipeline/manifest/sensor-webhook.yaml
 
 pull-tiny-llama-model: deploy-manifest
+	kubectl wait --for=condition=ready pod -l app=ollama -n argo-workflows --timeout=120s
 	kubectl exec -n argo-workflows deployment/ollama -- ollama pull tinyllama
 
 port-forwarding: deploy-manifest
-	kubectl port-forward svc/webhook-eventsource-svc 12000:12000 -n argo-events &
+	pkill -f "port-forward.*webhook-eventsource" || true
+	pkill -f "port-forward svc/argo-server" || true
+	sleep 2
+	kubectl wait --for=condition=ready pod -l eventsource-name=webhook -n argo-events --timeout=180s
+	kubectl wait --for=condition=ready pod -l app=argo-server -n argo --timeout=180s
+	kubectl port-forward -n argo-events $$(kubectl get pod -n argo-events -l eventsource-name=webhook -o jsonpath='{.items[0].metadata.name}') 12000:12000 &
 	kubectl port-forward svc/argo-server 2746:2746 -n argo &
+	sleep 3
 
 run-test: port-forwarding
 	sleep 5

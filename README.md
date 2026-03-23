@@ -1,6 +1,5 @@
 # Platform
 
-One command to spin up a full internal developer platform. An event-driven CI/CD, observability stack, GitOps infrastructure pipeline, and Kubernetes operator running locally in 10 minutes or less.
 
 ---
 

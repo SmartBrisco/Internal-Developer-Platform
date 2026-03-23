@@ -48,7 +48,6 @@ argo-event-install: namespaces
 	@echo "Waiting for argo-events controller..."
 	kubectl wait --for=condition=ready pod -l app=controller-manager -n argo-events --timeout=120s
 	@echo "Waiting for eventbus to be provisioned..."
-	sleep 15
 	kubectl wait --for=condition=ready pod -l eventbus-name=default -n argo-events --timeout=180s
 
 apply-rbac: argo-install argo-event-install
@@ -66,20 +65,26 @@ deploy-manifest: apply-rbac
 	kubectl wait --for=condition=ready pod -l eventsource-name=webhook -n argo-events --timeout=180s
 
 pull-tiny-llama-model: deploy-manifest
-	kubectl wait --for=condition=ready pod -l app=ollama -n argo-workflows --timeout=120s
+	kubectl wait --for=condition=ready pod -l app=ollama -n argo-workflows --timeout=300s
 	kubectl exec -n argo-workflows deployment/ollama -- ollama pull tinyllama
 
 port-forwarding: deploy-manifest
 	pkill -f "port-forward.*webhook-eventsource" || true
 	pkill -f "port-forward svc/argo-server" || true
 	kubectl wait --for=condition=ready pod -l app=argo-server -n argo --timeout=180s
-	kubectl port-forward -n argo-events $$(kubectl get pod -n argo-events -l eventsource-name=webhook -o jsonpath='{.items[0].metadata.name}') 12000:12000 &
+	kubectl wait --for=condition=ready pod -l eventsource-name=webhook -n argo-events --timeout=180s
+	kubectl port-forward svc/webhook-eventsource-svc 12000:12000 -n argo-events &
 	kubectl port-forward svc/argo-server 2746:2746 -n argo &
-	sleep 3
+	@echo "Waiting for port-forwards to bind..."
+	@until nc -z localhost 12000; do sleep 1; done
+	@until nc -z localhost 2746; do sleep 1; done
+	@echo "Ports ready."
 
 run-test: port-forwarding
-	sleep 5
-	curl -d '{"message":"hello"}' -H "Content-Type: application/json" -X POST http://localhost:12000/push
+	curl -s -w "\nHTTP Status: %{http_code}\n" \
+		-d '{"message":"hello"}' \
+		-H "Content-Type: application/json" \
+		-X POST http://localhost:12000/push
 	kubectl get workflows -n argo-workflows
 
 deploy-jaeger: namespaces
@@ -97,7 +102,8 @@ deploy-otel: deploy-jaeger deploy-prometheus deploy-grafana
 	kubectl apply -f platform-observability/k8s/otel-collector.yaml
 
 verify: deploy-otel
-	sleep 5
+	kubectl wait --for=condition=ready pod -l app=jaeger -n monitoring --timeout=120s
+	kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout=120s
 	kubectl get pods -n monitoring
 
 # -----------------------------------------

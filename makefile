@@ -1,6 +1,6 @@
 CLUSTER_NAME = my-cluster
 
-.PHONY: check-prereqs cluster-create namespaces clone operator-install operator-deploy-sample argo-install operator-run argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-bootstrap tf-init tf-policy tf-validate tf-scan kargo-install kargo-login kargo-setup kargo-promote-dev kargo-promote-prod platform-up
+.PHONY: check-prereqs cluster-create namespaces clone operator-install operator-deploy-sample argo-install operator-run argo-event-install apply-rbac deploy-manifest pull-tiny-llama-model port-forwarding run-test deploy-jaeger deploy-prometheus deploy-grafana deploy-otel verify tf-bootstrap tf-init tf-policy tf-validate tf-scan kargo-install kargo-login kargo-setup kargo-promote-dev kargo-promote-prod platform-up teardown
 
 clone:
 	git clone https://github.com/SmartBrisco/argo-event-pipeline || true
@@ -41,6 +41,8 @@ operator-deploy-sample:
 
 argo-install: namespaces
 	kubectl apply --server-side -f https://github.com/argoproj/argo-workflows/releases/latest/download/quick-start-minimal.yaml
+	kubectl wait --for=condition=available deployment/argo-server -n argo --timeout=120s
+	kubectl patch configmap workflow-controller-configmap -n argo --type merge -p '{"data":{"artifactRepository":"archiveLogs: false\n"}}'
 
 argo-event-install: namespaces
 	kubectl apply -n argo-events -f https://github.com/argoproj/argo-events/releases/latest/download/install.yaml
@@ -73,6 +75,7 @@ port-forwarding: deploy-manifest
 	pkill -f "port-forward svc/argo-server" || true
 	kubectl wait --for=condition=ready pod -l app=argo-server -n argo --timeout=180s
 	kubectl wait --for=condition=ready pod -l eventsource-name=webhook -n argo-events --timeout=180s
+	kubectl wait --for=condition=ready pod -l sensor-name=webhook -n argo-events --timeout=180s
 	kubectl port-forward svc/webhook-eventsource-svc 12000:12000 -n argo-events &
 	kubectl port-forward svc/argo-server 2746:2746 -n argo &
 	@echo "Waiting for port-forwards to bind..."
@@ -85,6 +88,8 @@ run-test: port-forwarding
 		-d '{"message":"hello"}' \
 		-H "Content-Type: application/json" \
 		-X POST http://localhost:12000/push
+	@echo "Waiting for workflow to appear..."
+	@sleep 3
 	kubectl get workflows -n argo-workflows
 
 deploy-jaeger: namespaces
@@ -168,4 +173,13 @@ tf-scan: tf-validate
 	trivy config gitops-infra-pipeline/terraform/gcp --severity HIGH,CRITICAL
 	trivy config gitops-infra-pipeline/terraform/azure --severity HIGH,CRITICAL
 
-platform-up: check-prereqs operator-install verify run-test pull-tiny-llama-model
+platform-up: check-prereqs operator-install verify pull-tiny-llama-model run-test
+
+
+# -----------------------------------------
+# TEARDOWN
+# -----------------------------------------
+teardown:
+	pkill -f "port-forward" || true
+	kind delete cluster --name $(CLUSTER_NAME)
+	rm -rf argo-event-pipeline gitops-infra-pipeline platform-observability namespace-provisioner

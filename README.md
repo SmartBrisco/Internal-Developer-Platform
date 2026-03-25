@@ -4,8 +4,8 @@
 ```bash
 make platform-up
 ```
-
 ![Platform up in 299s](screenshots/platform-up.png)
+
 
 ---
 

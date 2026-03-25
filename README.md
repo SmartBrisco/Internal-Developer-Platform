@@ -1,24 +1,30 @@
-# Platform
+# Internal Developer Platform
 
+> Full platform boots in under 5 minutes. One command.
+```bash
+make platform-up
+```
+
+![Platform up in 299s](screenshots/platform-up.png)
 
 ---
 
 ## What Gets Built
 
-This repo connects four projects into a single platform:
+`make platform-up` spins up a complete internal developer platform locally on kind. Four projects, one command:
 
 - **[argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline)** - Event-driven CI/CD pipeline on Kubernetes using Argo Events and Argo Workflows, with Trivy security scanning and AI-powered failure analysis via Ollama
 - **[platform-observability](https://github.com/SmartBrisco/platform-observability)** - Full-stack observability with OpenTelemetry, Jaeger, Prometheus, and Grafana receiving live telemetry from the Argo pipeline
 - **[gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline)** - Multi-cloud GitHub Actions and Terraform pipeline with OPA policy gates across AWS, GCP, and Azure. OIDC authentication, parallel cloud deployment jobs, and multi-channel Slack notifications.
 - **[namespace-provisioner](https://github.com/SmartBrisco/namespace-provisioner)** - Kubernetes operator for policy-enforced namespace provisioning with RBAC and resource quotas
 
-`make platform-up` handles the Kubernetes platform entirely locally. The GitOps infrastructure pipeline runs automatically via GitHub Actions on push to main in that repo.
+The GitOps infrastructure pipeline runs automatically via GitHub Actions on push to main in that repo.
 
 ---
 
-## Local Prerequisites
+## Prerequisites
 
-Install these before running anything:
+Install these before running anything, then run `make check-prereqs` to verify:
 
 | Tool | Purpose |
 |------|---------|
@@ -32,57 +38,18 @@ Install these before running anything:
 | [helm](https://helm.sh/docs/intro/install/) | Required to install Kargo |
 | [kargo CLI](https://github.com/akuity/kargo/releases/latest) | Kargo promotion CLI |
 
-Run `make check-prereqs` to verify all tools are installed before proceeding.
-
----
-
-## One-Time Setup (GitOps Infrastructure Pipeline Only)
-
-These steps are required once before the Terraform validation targets will work. They are not required for `make platform-up`.
-
-### 1. AWS OIDC Configuration
-
-Create an IAM OIDC Identity Provider in your AWS account:
-```
-Provider URL: https://token.actions.githubusercontent.com
-Audience: sts.amazonaws.com
-```
-
-Create four scoped inline policies: eks_access, ec2_vpc, SecretsManager, tfbacknstate. No AWS managed FullAccess policies are used.
-
-> This works with any cloud provider that supports OIDC federation with GitHub Actions. Replace the AWS-specific Terraform module with your provider of choice and the rest of the platform stays the same.
-
-### 2. Slack Webhooks
-
-Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps). Enable Incoming Webhooks and create three webhooks pointed at:
-
-- `#infra-deployments`
-- `#infra-alerts`
-- `#infra-audit`
-
-### 3. GitHub Secrets
-
-Add to your fork of `gitops-infra-pipeline` under Settings → Secrets and variables → Actions:
-
-| Secret | Value |
-|--------|-------|
-| `AWS_ROLE_ARN` | ARN of the IAM role created above |
-| `SLACK_WEBHOOK_DEPLOYMENTS` | Webhook URL for deployments channel |
-| `SLACK_WEBHOOK_ALERTS` | Webhook URL for alerts channel |
-| `SLACK_WEBHOOK_AUDIT` | Webhook URL for audit channel |
-
 ---
 
 ## Usage
 
-### Spin up the full platform
+### Spin up
 ```bash
 git clone <this-repo>
 cd platform
 make platform-up
 ```
 
-That's it. The Makefile handles the rest:
+The Makefile handles everything:
 
 1. Clones all four project repos
 2. Creates a local kind cluster
@@ -103,12 +70,31 @@ After `make platform-up` completes:
 | Service | URL |
 |---------|-----|
 | Argo UI | https://localhost:2746 |
+| Webhook | http://localhost:12000/push |
+
+To access the observability stack, port-forward separately:
+```bash
+kubectl port-forward svc/grafana 3000:3000 -n monitoring &
+kubectl port-forward svc/prometheus 9090:9090 -n monitoring &
+kubectl port-forward svc/jaeger-query 16686:16686 -n monitoring &
+```
+
+| Service | URL |
+|---------|-----|
 | Grafana | http://localhost:3000 (admin/admin) |
 | Prometheus | http://localhost:9090 |
 | Jaeger | http://localhost:16686 |
-| Webhook | http://localhost:12000/push |
 
-### Terraform validation (optional)
+### Tear down
+```bash
+make teardown
+```
+
+Kills port-forwards and deletes the cluster.
+
+---
+
+## Terraform Validation (Optional)
 
 For local validation of the GitOps infrastructure pipeline before pushing:
 ```bash
@@ -118,11 +104,48 @@ make tf-scan       # Trivy IaC scan per cloud
 make tf-policy     # OPA policy tests against AWS and GCP plan output
 ```
 
-Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-validate`, and `tf-scan` run without credentials. The actual `terraform apply` runs automatically via GitHub Actions on push to main in `gitops-infra-pipeline`.
+`tf-init`, `tf-validate`, and `tf-scan` run without credentials. `tf-policy` requires AWS credentials configured locally. The actual `terraform apply` runs automatically via GitHub Actions on push to main in `gitops-infra-pipeline`.
 
 ---
 
-## Individual Targets
+## One-Time Setup (GitOps Infrastructure Pipeline Only)
+
+Required once before Terraform validation targets will work. Not required for `make platform-up`.
+
+### AWS OIDC
+
+Create an IAM OIDC Identity Provider:
+```
+Provider URL: https://token.actions.githubusercontent.com
+Audience: sts.amazonaws.com
+```
+
+Create four scoped inline policies: `eks_access`, `ec2_vpc`, `SecretsManager`, `tfbackendstate`. No AWS managed FullAccess policies are used.
+
+> This works with any cloud provider that supports OIDC federation with GitHub Actions. Replace the AWS-specific Terraform module and the rest of the platform stays the same.
+
+### Slack Webhooks
+
+Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps). Enable Incoming Webhooks and create three webhooks pointed at:
+
+- `#infra-deployments`
+- `#infra-alerts`
+- `#infra-audit`
+
+### GitHub Secrets
+
+Add to your fork of `gitops-infra-pipeline` under Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+|--------|-------|
+| `AWS_ROLE_ARN` | ARN of the IAM role created above |
+| `SLACK_WEBHOOK_DEPLOYMENTS` | Webhook URL for deployments channel |
+| `SLACK_WEBHOOK_ALERTS` | Webhook URL for alerts channel |
+| `SLACK_WEBHOOK_AUDIT` | Webhook URL for audit channel |
+
+---
+
+## All Targets
 
 | Target | Description |
 |--------|-------------|
@@ -130,7 +153,7 @@ Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-vali
 | `make clone` | Clone all four project repos |
 | `make cluster-create` | Create the kind cluster |
 | `make namespaces` | Create all required namespaces |
-| `make operator-install` | Install the ManagedNamespace CRD to the cluster |
+| `make operator-install` | Install the ManagedNamespace CRD |
 | `make operator-run` | Run the operator locally (blocking) |
 | `make operator-deploy-sample` | Apply a sample ManagedNamespace manifest |
 | `make argo-install` | Install Argo Workflows |
@@ -150,18 +173,10 @@ Requires AWS credentials configured locally for `tf-policy`. `tf-init`, `tf-vali
 | `make tf-validate` | Run fmt and validate across all three clouds |
 | `make tf-scan` | Run Trivy IaC scan across all three clouds |
 | `make tf-policy` | Run OPA policy tests against AWS and GCP plan output |
-| `make kargo-install` | Install cert-manager and Kargo on the cluster |
+| `make kargo-install` | Install cert-manager and Kargo |
 | `make kargo-login` | Port-forward and login to Kargo |
 | `make kargo-setup` | Apply Kargo project, warehouse, and stages |
-| `make kargo-promote-dev` | Promote freight to dev (FREIGHT=<hash>) |
-| `make kargo-promote-prod` | Promote freight to prod (FREIGHT=<hash>) |
+| `make kargo-promote-dev` | Promote freight to dev (FREIGHT=\<hash\>) |
+| `make kargo-promote-prod` | Promote freight to prod (FREIGHT=\<hash\>) |
 | `make platform-up` | Spin up the full platform |
-
----
-
-## Part of a Platform Engineering Portfolio
-
-- **Project 1** - [argo-event-pipeline](https://github.com/SmartBrisco/argo-event-pipeline) - Event-driven CI/CD with AI-powered failure analysis
-- **Project 2** - [gitops-infra-pipeline](https://github.com/SmartBrisco/gitops-infra-pipeline) - Multi-cloud Terraform with Kargo progressive delivery, security gates, and manual approval across AWS, GCP, and Azure
-- **Project 3** - [platform-observability](https://github.com/SmartBrisco/platform-observability) - Unified observability with OpenTelemetry, Jaeger, Prometheus, and Grafana
-- **Project 4** - [namespace-provisioner](https://github.com/SmartBrisco/namespace-provisioner) - Kubernetes operator in Go for policy-enforced namespace provisioning
+| `make teardown` | Kill port-forwards and delete the cluster |
